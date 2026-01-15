@@ -308,6 +308,64 @@ export function useInstances() {
     }
   };
 
+  // Sync all phone numbers from Evolution API
+  const syncAllNumbers = async () => {
+    if (!hasRequiredSettings) {
+      toast.error("Configure a Evolution API nas configurações primeiro");
+      return;
+    }
+
+    try {
+      setActionLoading("sync");
+      
+      const { data, error } = await supabase.functions.invoke("evolution-proxy", {
+        body: {
+          action: "fetchInstances",
+          evolutionApiUrl: settings.evolutionApiUrl,
+          evolutionApiKey: settings.evolutionApiKey,
+        },
+      });
+
+      console.log("Sync response:", data);
+      
+      if (error) throw error;
+
+      // Evolution API returns array of instances
+      const evoInstances = Array.isArray(data) ? data : [];
+      let updated = 0;
+      
+      for (const evoInstance of evoInstances) {
+        // Match by instance name
+        const localInstance = instances.find(
+          i => i.instance_name === evoInstance.instanceName || i.instance_name === evoInstance.name
+        );
+        
+        if (localInstance) {
+          // Extract phone number from owner field (format: "5511999999999@s.whatsapp.net")
+          const owner = evoInstance.owner || evoInstance.instance?.owner;
+          const phoneNumber = owner ? owner.split("@")[0] : null;
+          const state = evoInstance.connectionStatus || evoInstance.state || evoInstance.instance?.state;
+          
+          if (phoneNumber || state) {
+            await updateInstance(localInstance.id, {
+              phone_number: phoneNumber || localInstance.phone_number,
+              status: state === "open" ? "open" : localInstance.status,
+            });
+            updated++;
+          }
+        }
+      }
+
+      await loadInstances();
+      toast.success(`${updated} instância(s) sincronizada(s)`);
+    } catch (error: any) {
+      console.error("Error syncing numbers:", error);
+      toast.error(error.message || "Erro ao sincronizar números");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const activeInstances = instances.filter(
     (i) => i.status === "open" || i.status === "connected"
   );
@@ -322,6 +380,7 @@ export function useInstances() {
     disconnectInstance,
     refreshInstance,
     deleteInstance,
+    syncAllNumbers,
     reload: loadInstances,
   };
 }

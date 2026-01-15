@@ -66,6 +66,12 @@ serve(async (req) => {
         method = "GET";
         break;
         
+      case "fetchInstance":
+        // Fetch single instance details (includes phone number)
+        endpoint = `/instance/fetchInstances?instanceName=${instanceName}`;
+        method = "GET";
+        break;
+        
       case "logout":
         // Logout from WhatsApp
         endpoint = `/instance/logout/${instanceName}`;

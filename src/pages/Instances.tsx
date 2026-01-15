@@ -1,7 +1,8 @@
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { InstanceCard } from "@/components/instances/InstanceCard";
 import { CreateInstanceDialog } from "@/components/instances/CreateInstanceDialog";
 import { useInstances } from "@/hooks/useInstances";
+import { Button } from "@/components/ui/button";
 
 const Instances = () => {
   const {
@@ -13,7 +14,10 @@ const Instances = () => {
     disconnectInstance,
     refreshInstance,
     deleteInstance,
+    syncAllNumbers,
   } = useInstances();
+
+  const isSyncing = actionLoading === "sync";
 
   return (
     <div className="space-y-6">
@@ -22,7 +26,18 @@ const Instances = () => {
           <h1 className="text-3xl font-bold neon-text">Instâncias</h1>
           <p className="text-muted-foreground mt-1">Gerencie seus chips de WhatsApp</p>
         </div>
-        <CreateInstanceDialog onCreateInstance={createInstance} isLoading={actionLoading === "create"} />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={syncAllNumbers}
+            disabled={isSyncing || instances.length === 0}
+            className="border-primary/50 text-primary hover:bg-primary/10"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
+            Sincronizar Números
+          </Button>
+          <CreateInstanceDialog onCreateInstance={createInstance} isLoading={actionLoading === "create"} />
+        </div>
       </div>
 
       {isLoading ? (

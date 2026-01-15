@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   getInstances, 
   createInstance as createInstanceDb, 
@@ -15,6 +15,7 @@ export function useInstances() {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const { settings, hasRequiredSettings } = useSettings();
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadInstances = useCallback(async () => {
     try {
@@ -31,7 +32,48 @@ export function useInstances() {
 
   useEffect(() => {
     loadInstances();
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
   }, [loadInstances]);
+
+  // Poll for status updates on connecting instances
+  useEffect(() => {
+    const connectingInstances = instances.filter(i => i.status === "connecting" && i.qr_code);
+    
+    if (connectingInstances.length > 0 && hasRequiredSettings) {
+      pollingRef.current = setInterval(async () => {
+        for (const instance of connectingInstances) {
+          try {
+            const { data } = await supabase.functions.invoke("evolution-proxy", {
+              body: {
+                action: "status",
+                instanceName: instance.instance_name,
+                evolutionApiUrl: settings.evolutionApiUrl,
+                evolutionApiKey: settings.evolutionApiKey,
+              },
+            });
+
+            if (data?.instance?.state === "open") {
+              await updateInstance(instance.id, {
+                status: "open",
+                phone_number: data.instance?.owner?.split("@")[0] || null,
+                qr_code: null,
+              });
+              toast.success(`${instance.instance_name} conectado!`);
+              loadInstances();
+            }
+          } catch (e) {
+            console.warn("Polling error:", e);
+          }
+        }
+      }, 5000);
+    }
+
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [instances, hasRequiredSettings, settings]);
 
   const createInstance = async (name: string) => {
     if (!hasRequiredSettings) {
@@ -45,8 +87,10 @@ export function useInstances() {
       // Create in database first
       const dbInstance = await createInstanceDb(name);
       if (!dbInstance) {
-        throw new Error("Failed to create instance in database");
+        throw new Error("Falha ao criar instância no banco");
       }
+
+      console.log("Creating instance in Evolution API:", name);
 
       // Call Evolution API via edge function
       const { data, error } = await supabase.functions.invoke("evolution-proxy", {
@@ -58,16 +102,40 @@ export function useInstances() {
         },
       });
 
+      console.log("Evolution API response:", data);
+
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      // Extract QR code from response - Evolution API v2 format
+      let qrCodeBase64 = null;
+      
+      if (data?.qrcode?.base64) {
+        qrCodeBase64 = data.qrcode.base64;
+      } else if (data?.base64) {
+        qrCodeBase64 = data.base64;
+      } else if (typeof data?.qrcode === "string") {
+        qrCodeBase64 = data.qrcode;
+      }
+
+      // Make sure base64 has proper data URI prefix
+      if (qrCodeBase64 && !qrCodeBase64.startsWith("data:")) {
+        qrCodeBase64 = `data:image/png;base64,${qrCodeBase64}`;
+      }
 
       // Update instance with Evolution data
       await updateInstance(dbInstance.id, {
-        instance_id: data.instance?.instanceName || name,
-        qr_code: data.qrcode?.base64 ? `data:image/png;base64,${data.qrcode.base64}` : null,
-        status: data.instance?.state || "connecting",
+        instance_id: data?.instance?.instanceName || data?.instanceName || name,
+        qr_code: qrCodeBase64,
+        status: qrCodeBase64 ? "connecting" : (data?.instance?.state || "created"),
       });
 
-      toast.success("Instância criada! Escaneie o QR Code.");
+      if (qrCodeBase64) {
+        toast.success("QR Code gerado! Escaneie com seu WhatsApp.");
+      } else {
+        toast.success("Instância criada! Clique em Conectar para gerar o QR Code.");
+      }
+      
       await loadInstances();
     } catch (error: any) {
       console.error("Error creating instance:", error);
@@ -95,14 +163,40 @@ export function useInstances() {
         },
       });
 
+      console.log("Connect response:", data);
+
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      // Extract QR code
+      let qrCodeBase64 = null;
+      
+      if (data?.qrcode?.base64) {
+        qrCodeBase64 = data.qrcode.base64;
+      } else if (data?.base64) {
+        qrCodeBase64 = data.base64;
+      } else if (typeof data?.qrcode === "string") {
+        qrCodeBase64 = data.qrcode;
+      } else if (data?.code) {
+        // Some versions return code instead of qrcode
+        qrCodeBase64 = data.code;
+      }
+
+      if (qrCodeBase64 && !qrCodeBase64.startsWith("data:")) {
+        qrCodeBase64 = `data:image/png;base64,${qrCodeBase64}`;
+      }
 
       await updateInstance(instance.id, {
-        qr_code: data.base64 ? `data:image/png;base64,${data.base64}` : null,
+        qr_code: qrCodeBase64,
         status: "connecting",
       });
 
-      toast.success("Escaneie o QR Code para conectar");
+      if (qrCodeBase64) {
+        toast.success("Escaneie o QR Code para conectar");
+      } else {
+        toast.info("Aguardando QR Code...");
+      }
+      
       await loadInstances();
     } catch (error: any) {
       console.error("Error connecting instance:", error);
@@ -118,7 +212,7 @@ export function useInstances() {
     try {
       setActionLoading(instance.id);
 
-      const { error } = await supabase.functions.invoke("evolution-proxy", {
+      await supabase.functions.invoke("evolution-proxy", {
         body: {
           action: "logout",
           instanceName: instance.instance_name,
@@ -126,8 +220,6 @@ export function useInstances() {
           evolutionApiKey: settings.evolutionApiKey,
         },
       });
-
-      if (error) throw error;
 
       await updateInstance(instance.id, {
         status: "disconnected",
@@ -160,17 +252,20 @@ export function useInstances() {
         },
       });
 
+      console.log("Status response:", data);
+
       if (error) throw error;
 
-      const isConnected = data.instance?.state === "open";
+      const state = data?.instance?.state || data?.state || "disconnected";
+      const isConnected = state === "open";
       
       await updateInstance(instance.id, {
-        status: data.instance?.state || "disconnected",
-        phone_number: isConnected ? data.instance?.owner?.split("@")[0] : null,
+        status: state,
+        phone_number: isConnected ? (data?.instance?.owner?.split("@")[0] || null) : null,
         qr_code: isConnected ? null : instance.qr_code,
       });
 
-      toast.success(`Status: ${isConnected ? "Conectado" : "Desconectado"}`);
+      toast.success(`Status: ${isConnected ? "Conectado ✓" : state}`);
       await loadInstances();
     } catch (error: any) {
       console.error("Error refreshing instance:", error);

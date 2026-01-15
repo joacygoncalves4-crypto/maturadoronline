@@ -330,29 +330,47 @@ export function useInstances() {
       
       if (error) throw error;
 
-      // Evolution API returns array of instances
+      // Evolution API returns array of instances with fields: name, ownerJid, connectionStatus
       const evoInstances = Array.isArray(data) ? data : [];
       let updated = 0;
       
+      console.log("Evolution instances found:", evoInstances.length);
+      
       for (const evoInstance of evoInstances) {
-        // Match by instance name
+        console.log("Processing Evolution instance:", {
+          name: evoInstance.name,
+          ownerJid: evoInstance.ownerJid,
+          connectionStatus: evoInstance.connectionStatus
+        });
+        
+        // Match by instance_id (which should match Evolution's "name" field)
+        // or by instance_name for backwards compatibility
         const localInstance = instances.find(
-          i => i.instance_name === evoInstance.instanceName || i.instance_name === evoInstance.name
+          i => i.instance_id === evoInstance.name || 
+               i.instance_name === evoInstance.name ||
+               i.instance_name.toLowerCase() === evoInstance.name?.toLowerCase()
         );
         
         if (localInstance) {
-          // Extract phone number from owner field (format: "5511999999999@s.whatsapp.net")
-          const owner = evoInstance.owner || evoInstance.instance?.owner;
-          const phoneNumber = owner ? owner.split("@")[0] : null;
-          const state = evoInstance.connectionStatus || evoInstance.state || evoInstance.instance?.state;
+          console.log("Found local match:", localInstance.instance_name);
           
-          if (phoneNumber || state) {
+          // Extract phone number from ownerJid (format: "5511999999999@s.whatsapp.net")
+          const ownerJid = evoInstance.ownerJid;
+          const phoneNumber = ownerJid ? ownerJid.split("@")[0] : null;
+          const connectionStatus = evoInstance.connectionStatus;
+          
+          console.log("Extracted:", { phoneNumber, connectionStatus });
+          
+          if (phoneNumber || connectionStatus) {
             await updateInstance(localInstance.id, {
               phone_number: phoneNumber || localInstance.phone_number,
-              status: state === "open" ? "open" : localInstance.status,
+              status: connectionStatus === "open" ? "open" : 
+                      connectionStatus === "close" ? "disconnected" : localInstance.status,
             });
             updated++;
           }
+        } else {
+          console.log("No local match for:", evoInstance.name);
         }
       }
 

@@ -44,50 +44,42 @@ serve(async (req) => {
         break;
         
       case "connect":
-        // Get QR Code for existing instance
-        endpoint = `/instance/connect/${instanceName}`;
+        endpoint = `/instance/connect/${encodedName}`;
         method = "GET";
         break;
         
       case "fetchQr":
-        // Fetch QR code base64
-        endpoint = `/instance/connect/${instanceName}`;
+        endpoint = `/instance/connect/${encodedName}`;
         method = "GET";
         break;
         
       case "status":
-        // Check connection state
-        endpoint = `/instance/connectionState/${instanceName}`;
+        endpoint = `/instance/connectionState/${encodedName}`;
         method = "GET";
         break;
         
       case "fetchInstances":
-        // List all instances
         endpoint = `/instance/fetchInstances`;
         method = "GET";
         break;
         
       case "fetchInstance":
-        // Fetch single instance details (includes phone number)
-        endpoint = `/instance/fetchInstances?instanceName=${instanceName}`;
+        endpoint = `/instance/fetchInstances?instanceName=${encodedName}`;
         method = "GET";
         break;
         
       case "logout":
-        // Logout from WhatsApp
-        endpoint = `/instance/logout/${instanceName}`;
+        endpoint = `/instance/logout/${encodedName}`;
         method = "DELETE";
         break;
         
       case "delete":
-        // Delete instance completely
-        endpoint = `/instance/delete/${instanceName}`;
+        endpoint = `/instance/delete/${encodedName}`;
         method = "DELETE";
         break;
         
       case "sendText":
-        // Send text message
-        endpoint = `/message/sendText/${instanceName}`;
+        endpoint = `/message/sendText/${encodedName}`;
         method = "POST";
         body = JSON.stringify({
           number: data.number,
@@ -97,21 +89,19 @@ serve(async (req) => {
         break;
         
       case "sendMedia":
-        // Send media (for status/stories)
-        endpoint = `/message/sendMedia/${instanceName}`;
+        endpoint = `/message/sendMedia/${encodedName}`;
         method = "POST";
         body = JSON.stringify({
           number: "status@broadcast",
           mediatype: data.mediatype || "image",
           mimetype: data.mimetype || "image/jpeg",
           caption: data.caption || "",
-          media: data.media, // base64 or URL
+          media: data.media,
         });
         break;
         
       case "sendStatus":
-        // Post status/story
-        endpoint = `/message/sendStatus/${instanceName}`;
+        endpoint = `/message/sendStatus/${encodedName}`;
         method = "POST";
         body = JSON.stringify({
           type: data.type || "image",

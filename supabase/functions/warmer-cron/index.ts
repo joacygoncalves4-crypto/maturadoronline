@@ -126,10 +126,55 @@ serve(async (req) => {
       return jsonResponse({ status: "daily_limit_reached" });
     }
 
-    // 8. Select sender and receiver (random, different instances)
-    const shuffled = [...availableInstances].sort(() => Math.random() - 0.5);
-    const sender = shuffled[0];
-    const receiver = shuffled[1];
+    // 8. Fair pair rotation - pick the pair that has talked the LEAST
+    // Generate all possible pairs from available instances
+    const allPairs: { sender: typeof availableInstances[0]; receiver: typeof availableInstances[0] }[] = [];
+    for (let i = 0; i < availableInstances.length; i++) {
+      for (let j = 0; j < availableInstances.length; j++) {
+        if (i !== j) {
+          allPairs.push({ sender: availableInstances[i], receiver: availableInstances[j] });
+        }
+      }
+    }
+
+    // Check recent logs to find the least-used pair
+    const { data: recentLogs } = await supabase
+      .from("logs")
+      .select("from_number, to_number")
+      .eq("type", "message")
+      .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    // Count messages per pair
+    const pairCounts: Record<string, number> = {};
+    for (const log of recentLogs || []) {
+      const key = `${log.from_number}->${log.to_number}`;
+      pairCounts[key] = (pairCounts[key] || 0) + 1;
+    }
+
+    // Score each pair (lower = should be picked first)
+    const scoredPairs = allPairs
+      .filter((p) => p.sender.phone_number && p.receiver.phone_number)
+      .map((p) => ({
+        ...p,
+        score: (pairCounts[`${p.sender.phone_number}->${p.receiver.phone_number}`] || 0),
+      }))
+      .sort((a, b) => a.score - b.score);
+
+    if (scoredPairs.length === 0) {
+      console.log("[Warmer Cron] No valid pairs found");
+      return jsonResponse({ status: "no_valid_pairs" });
+    }
+
+    // Pick from the least-used pairs (with some randomness among ties)
+    const minScore = scoredPairs[0].score;
+    const leastUsedPairs = scoredPairs.filter((p) => p.score <= minScore + 1);
+    const chosen = leastUsedPairs[Math.floor(Math.random() * leastUsedPairs.length)];
+    const sender = chosen.sender;
+    const receiver = chosen.receiver;
+
+    console.log(`[Warmer Cron] Fair rotation: pair score=${chosen.score}, least-used among ${leastUsedPairs.length} candidates`);
 
     if (!sender.phone_number || !receiver.phone_number) {
       console.log("[Warmer Cron] Instances missing phone numbers");

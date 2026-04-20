@@ -330,34 +330,39 @@ export function useInstances() {
       
       if (error) throw error;
 
-      // Evolution API returns array of instances with fields: name, ownerJid, connectionStatus
+      // Evolution API v2 returns different formats depending on version
+      // Format 1: [{ instance: { instanceName, owner }, ... }]
+      // Format 2: [{ name, ownerJid, connectionStatus }]
       const evoInstances = Array.isArray(data) ? data : [];
       let updated = 0;
       
       console.log("Evolution instances found:", evoInstances.length);
+      console.log("Raw first instance:", JSON.stringify(evoInstances[0])?.slice(0, 500));
       
-      for (const evoInstance of evoInstances) {
-        console.log("Processing Evolution instance:", {
-          name: evoInstance.name,
-          ownerJid: evoInstance.ownerJid,
-          connectionStatus: evoInstance.connectionStatus
-        });
+      for (const raw of evoInstances) {
+        // Normalize: handle both Evolution API v2 response formats
+        const instanceData = raw.instance || raw;
+        const name = instanceData.instanceName || instanceData.name || raw.name;
+        const owner = instanceData.owner || raw.ownerJid || raw.owner;
+        const connectionStatus = instanceData.state || instanceData.connectionStatus || raw.connectionStatus;
         
-        // Match by instance_id (which should match Evolution's "name" field)
-        // or by instance_name for backwards compatibility
+        console.log("Processing Evolution instance:", { name, owner, connectionStatus });
+        
+        // Match by instance_name (case-insensitive)
         const localInstance = instances.find(
-          i => i.instance_id === evoInstance.name || 
-               i.instance_name === evoInstance.name ||
-               i.instance_name.toLowerCase() === evoInstance.name?.toLowerCase()
+          i => i.instance_id === name || 
+               i.instance_name === name ||
+               i.instance_name.toLowerCase() === name?.toLowerCase()
         );
         
         if (localInstance) {
           console.log("Found local match:", localInstance.instance_name);
           
-          // Extract phone number from ownerJid (format: "5511999999999@s.whatsapp.net")
-          const ownerJid = evoInstance.ownerJid;
-          const phoneNumber = ownerJid ? ownerJid.split("@")[0] : null;
-          const connectionStatus = evoInstance.connectionStatus;
+          // Extract phone number from owner/ownerJid (format: "5511999999999@s.whatsapp.net" or just the number)
+          let phoneNumber: string | null = null;
+          if (owner) {
+            phoneNumber = owner.includes("@") ? owner.split("@")[0] : owner;
+          }
           
           console.log("Extracted:", { phoneNumber, connectionStatus });
           
@@ -370,7 +375,7 @@ export function useInstances() {
             updated++;
           }
         } else {
-          console.log("No local match for:", evoInstance.name);
+          console.log("No local match for:", name);
         }
       }
 

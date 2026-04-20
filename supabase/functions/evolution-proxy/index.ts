@@ -84,7 +84,7 @@ serve(async (req) => {
         body = JSON.stringify({
           number: data.number,
           text: data.text,
-          delay: data.delay || 1000,
+          delay: Math.max(0, Math.round(Number(data.delay) || 1000)),
         });
         break;
         

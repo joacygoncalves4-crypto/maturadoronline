@@ -18,6 +18,7 @@ serve(async (req) => {
     }
 
     const baseUrl = evolutionApiUrl.replace(/\/$/, "");
+    const encodedName = instanceName ? encodeURIComponent(instanceName) : "";
     let endpoint = "";
     let method = "GET";
     let body: string | undefined;

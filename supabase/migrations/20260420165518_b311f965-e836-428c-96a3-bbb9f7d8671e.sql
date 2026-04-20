@@ -1,0 +1,1 @@
+UPDATE public.system_status SET is_active = false;

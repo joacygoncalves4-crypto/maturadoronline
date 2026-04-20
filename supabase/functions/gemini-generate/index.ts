@@ -33,7 +33,15 @@ serve(async (req) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[Gemini] API error (${response.status}):`, errorText.slice(0, 300));
-      throw new Error(`Gemini API error: ${response.status}`);
+
+      return new Response(JSON.stringify({
+        error: response.status === 429 ? "RATE_LIMITED" : `Gemini API error: ${response.status}`,
+        fallback: true,
+        message: "E aí, tudo certo?",
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      });
     }
 
     const result = await response.json();
@@ -46,9 +54,9 @@ serve(async (req) => {
     });
   } catch (error: any) {
     console.error("[Gemini] Error:", error.message);
-    return new Response(JSON.stringify({ error: error.message, message: "E aí, tudo certo?" }), {
+    return new Response(JSON.stringify({ error: error.message, fallback: true, message: "E aí, tudo certo?" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
+      status: 200,
     });
   }
 });

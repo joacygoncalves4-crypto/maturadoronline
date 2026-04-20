@@ -17,36 +17,48 @@ export type Database = {
       instances: {
         Row: {
           created_at: string
+          daily_limit: number
           id: string
           instance_id: string | null
           instance_name: string
+          last_message_date: string | null
+          messages_sent_today: number
           phone_number: string | null
           qr_code: string | null
           status: string
           token: string | null
           updated_at: string
+          warming_start_date: string | null
         }
         Insert: {
           created_at?: string
+          daily_limit?: number
           id?: string
           instance_id?: string | null
           instance_name: string
+          last_message_date?: string | null
+          messages_sent_today?: number
           phone_number?: string | null
           qr_code?: string | null
           status?: string
           token?: string | null
           updated_at?: string
+          warming_start_date?: string | null
         }
         Update: {
           created_at?: string
+          daily_limit?: number
           id?: string
           instance_id?: string | null
           instance_name?: string
+          last_message_date?: string | null
+          messages_sent_today?: number
           phone_number?: string | null
           qr_code?: string | null
           status?: string
           token?: string | null
           updated_at?: string
+          warming_start_date?: string | null
         }
         Relationships: []
       }
@@ -104,6 +116,36 @@ export type Database = {
         }
         Relationships: []
       }
+      messages: {
+        Row: {
+          category: string
+          content: string
+          created_at: string
+          id: string
+          is_active: boolean
+          last_used_at: string | null
+          used_count: number
+        }
+        Insert: {
+          category?: string
+          content: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          used_count?: number
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          last_used_at?: string | null
+          used_count?: number
+        }
+        Relationships: []
+      }
       settings: {
         Row: {
           created_at: string
@@ -130,24 +172,42 @@ export type Database = {
       }
       system_status: {
         Row: {
+          daily_limit_per_chip: number
+          enable_bidirectional: boolean
+          end_hour: number
           id: string
           interval_minutes: number
           is_active: boolean
           last_execution: string | null
+          max_interval_minutes: number
+          min_interval_minutes: number
+          start_hour: number
           updated_at: string
         }
         Insert: {
+          daily_limit_per_chip?: number
+          enable_bidirectional?: boolean
+          end_hour?: number
           id?: string
           interval_minutes?: number
           is_active?: boolean
           last_execution?: string | null
+          max_interval_minutes?: number
+          min_interval_minutes?: number
+          start_hour?: number
           updated_at?: string
         }
         Update: {
+          daily_limit_per_chip?: number
+          enable_bidirectional?: boolean
+          end_hour?: number
           id?: string
           interval_minutes?: number
           is_active?: boolean
           last_execution?: string | null
+          max_interval_minutes?: number
+          min_interval_minutes?: number
+          start_hour?: number
           updated_at?: string
         }
         Relationships: []

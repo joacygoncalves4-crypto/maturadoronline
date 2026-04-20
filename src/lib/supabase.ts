@@ -42,6 +42,10 @@ export interface Instance {
   status: string;
   phone_number: string | null;
   qr_code: string | null;
+  messages_sent_today: number;
+  daily_limit: number;
+  last_message_date: string | null;
+  warming_start_date: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -59,7 +63,7 @@ export async function getInstances(): Promise<Instance[]> {
 export async function createInstance(name: string): Promise<Instance | null> {
   const { data, error } = await supabase
     .from('instances')
-    .insert({ instance_name: name })
+    .insert({ instance_name: name, warming_start_date: new Date().toISOString().split('T')[0] })
     .select()
     .single();
   
@@ -123,6 +127,12 @@ export interface SystemStatus {
   is_active: boolean;
   interval_minutes: number;
   last_execution: string | null;
+  start_hour: number;
+  end_hour: number;
+  min_interval_minutes: number;
+  max_interval_minutes: number;
+  enable_bidirectional: boolean;
+  daily_limit_per_chip: number;
   updated_at: string;
 }
 
@@ -150,6 +160,96 @@ export async function updateSystemStatus(updates: Partial<SystemStatus>): Promis
     .eq('id', existing.id);
   
   return !error;
+}
+
+// Messages helpers (NEW - Message Bank)
+export interface Message {
+  id: string;
+  content: string;
+  category: string;
+  used_count: number;
+  last_used_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export async function getMessages(): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error || !data) return [];
+  return data;
+}
+
+export async function getActiveMessages(): Promise<Message[]> {
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('is_active', true)
+    .order('used_count', { ascending: true });
+  
+  if (error || !data) return [];
+  return data;
+}
+
+export async function addMessage(content: string, category: string = 'geral'): Promise<Message | null> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ content, category })
+    .select()
+    .single();
+  
+  if (error || !data) return null;
+  return data;
+}
+
+export async function addMessagesBulk(messages: { content: string; category: string }[]): Promise<number> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert(messages)
+    .select();
+  
+  if (error || !data) return 0;
+  return data.length;
+}
+
+export async function deleteMessage(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('id', id);
+  
+  return !error;
+}
+
+export async function deleteAllMessages(): Promise<boolean> {
+  const { error } = await supabase
+    .from('messages')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
+  
+  return !error;
+}
+
+export async function toggleMessage(id: string, isActive: boolean): Promise<boolean> {
+  const { error } = await supabase
+    .from('messages')
+    .update({ is_active: isActive })
+    .eq('id', id);
+  
+  return !error;
+}
+
+export async function getMessageStats(): Promise<{ total: number; active: number; categories: Record<string, number> }> {
+  const messages = await getMessages();
+  const active = messages.filter(m => m.is_active).length;
+  const categories: Record<string, number> = {};
+  messages.forEach(m => {
+    categories[m.category] = (categories[m.category] || 0) + 1;
+  });
+  return { total: messages.length, active, categories };
 }
 
 // Media queue helpers

@@ -1,12 +1,14 @@
-import { MessageSquare, Smartphone, Zap, Clock } from "lucide-react";
+import { MessageSquare, Smartphone, Zap, Clock, FileText } from "lucide-react";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { TerminalLog } from "@/components/ui/TerminalLog";
 import { useInstances } from "@/hooks/useInstances";
 import { useWarmer } from "@/hooks/useWarmer";
+import { useMessages } from "@/hooks/useMessages";
 
 const Dashboard = () => {
   const { instances, activeInstances } = useInstances();
   const { logs, todayLogs, systemStatus } = useWarmer(activeInstances);
+  const { stats: messageStats } = useMessages();
 
   return (
     <div className="space-y-6">
@@ -15,7 +17,7 @@ const Dashboard = () => {
         <p className="text-muted-foreground mt-1">Visão geral do sistema de maturação</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <MetricCard
           title="Mensagens Trocadas"
           value={logs.length}
@@ -32,8 +34,13 @@ const Dashboard = () => {
           icon={<Zap className="w-6 h-6 text-primary" />}
         />
         <MetricCard
+          title="Banco de Msgs"
+          value={messageStats.active}
+          icon={<FileText className="w-6 h-6 text-primary" />}
+        />
+        <MetricCard
           title="Status"
-          value={systemStatus?.is_active ? "Ativo" : "Pausado"}
+          value={systemStatus?.is_active ? "Ativo 🔥" : "Pausado"}
           icon={<Clock className="w-6 h-6 text-primary" />}
         />
       </div>

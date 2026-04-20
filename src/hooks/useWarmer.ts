@@ -4,6 +4,7 @@ import {
   updateSystemStatus, 
   getLogs, 
   createLog,
+  getActiveMessages,
   SystemStatus,
   LogEntry,
   Instance
@@ -58,7 +59,56 @@ export function useWarmer(activeInstances: Instance[]) {
   }, [loadData]);
 
   const generateMessage = async (): Promise<string> => {
-    // Fallback messages if no Gemini token or if API fails
+    // Priority 1: Get message from database bank
+    try {
+      const messages = await getActiveMessages();
+      if (messages.length > 0) {
+        // Pick from least-used messages for variety
+        const leastUsedCount = messages[0].used_count || 0;
+        const leastUsed = messages.filter(m => (m.used_count || 0) <= leastUsedCount + 2);
+        const chosen = leastUsed[Math.floor(Math.random() * leastUsed.length)];
+
+        // Update usage counter
+        await supabase
+          .from('messages')
+          .update({ 
+            used_count: (chosen.used_count || 0) + 1,
+            last_used_at: new Date().toISOString() 
+          })
+          .eq('id', chosen.id);
+
+        return chosen.content;
+      }
+    } catch (error) {
+      console.error("Error fetching messages from bank:", error);
+    }
+
+    // Priority 2: Gemini AI (fallback if API token is set)
+    if (settings.geminiApiToken) {
+      try {
+        const { data, error } = await supabase.functions.invoke("gemini-generate", {
+          body: {
+            geminiApiToken: settings.geminiApiToken,
+            prompt: `Gere UMA mensagem casual e curta de WhatsApp em português brasileiro.
+Use gírias leves como: "mano", "cara", "beleza", "suave", "tmj", "kkk".
+Simule um amigo falando com outro de forma natural.
+Variações possíveis: pergunta casual, saudação, comentário sobre futebol, planos.
+MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
+          },
+        });
+
+        if (error) throw error;
+        
+        const message = data?.message?.trim();
+        if (message && message.length > 3 && message.length < 100) {
+          return message.replace(/^["']|["']$/g, '');
+        }
+      } catch (error) {
+        console.error("Error generating message via Gemini:", error);
+      }
+    }
+
+    // Priority 3: Hardcoded fallback (emergency only)
     const fallbackMessages = [
       "E aí mano, suave? 👊",
       "Fala aí parceiro, tudo certo?",
@@ -77,34 +127,7 @@ export function useWarmer(activeInstances: Instance[]) {
       "Opa, tranquilo por aí?",
     ];
 
-    if (!settings.geminiApiToken) {
-      return fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)];
-    }
-
-    try {
-      const { data, error } = await supabase.functions.invoke("gemini-generate", {
-        body: {
-          geminiApiToken: settings.geminiApiToken,
-          prompt: `Gere UMA mensagem casual e curta de WhatsApp em português brasileiro.
-Use gírias leves como: "mano", "cara", "beleza", "suave", "tmj", "kkk".
-Simule um amigo falando com outro de forma natural.
-Variações possíveis: pergunta casual, saudação, comentário sobre futebol, planos.
-MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
-        },
-      });
-
-      if (error) throw error;
-      
-      const message = data?.message?.trim();
-      if (message && message.length > 3 && message.length < 100) {
-        return message.replace(/^["']|["']$/g, ''); // Remove quotes if present
-      }
-      
-      return fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)];
-    } catch (error) {
-      console.error("Error generating message:", error);
-      return fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)];
-    }
+    return fallbackMessages[Math.floor(Math.random() * fallbackMessages.length)];
   };
 
   const sendMessage = async (from: Instance, to: Instance, message: string): Promise<boolean> => {
@@ -130,7 +153,7 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
           data: {
             number: to.phone_number,
             text: message,
-            delay: 1000 + Math.random() * 2000, // Random delay 1-3s for humanization
+            delay: 3000 + Math.random() * 5000, // Humanized delay 3-8s
           },
         },
       });
@@ -230,6 +253,12 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
       setSystemStatus((prev) => prev ? { ...prev, is_active: active } : null);
       
       if (active) {
+        // Also trigger the cron function to start immediately
+        try {
+          await supabase.functions.invoke("warmer-cron", { body: {} });
+        } catch (e) {
+          console.log("Cron trigger (optional):", e);
+        }
         toast.success("Sistema de maturação ATIVADO! 🔥");
       } else {
         toast.info("Sistema de maturação pausado");
@@ -250,7 +279,17 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
     }
   };
 
-  // Warmer loop effect
+  const updateAntibanSettings = async (updates: Partial<SystemStatus>) => {
+    try {
+      await updateSystemStatus(updates);
+      setSystemStatus((prev) => prev ? { ...prev, ...updates } : null);
+      toast.success("Configurações anti-ban atualizadas");
+    } catch (error) {
+      console.error("Error updating anti-ban settings:", error);
+    }
+  };
+
+  // Warmer loop effect - also acts as backup when cron is available
   useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -260,13 +299,13 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
     if (systemStatus?.is_active && activeInstances.length >= 2 && hasRequiredSettings) {
       const intervalMs = (systemStatus.interval_minutes || 5) * 60 * 1000;
       
-      console.log(`Warmer activated: running every ${systemStatus.interval_minutes} minutes`);
+      console.log(`Warmer activated: running every ${systemStatus.interval_minutes} minutes (browser backup)`);
       
       // Run immediately on activation
       runWarmerCycle();
       
       intervalRef.current = setInterval(() => {
-        console.log("Warmer interval triggered");
+        console.log("Warmer interval triggered (browser)");
         runWarmerCycle();
       }, intervalMs);
     }
@@ -297,6 +336,7 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
     isRunning,
     toggleSystem,
     updateInterval,
+    updateAntibanSettings,
     runManualCycle: runWarmerCycle,
     reload: loadData,
   };

@@ -7,6 +7,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import Dashboard from "./pages/Index";
 import Instances from "./pages/Instances";
 import Warmer from "./pages/Warmer";
+import Messages from "./pages/Messages";
 import Status from "./pages/Status";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/instances" element={<Instances />} />
             <Route path="/warmer" element={<Warmer />} />
+            <Route path="/messages" element={<Messages />} />
             <Route path="/status" element={<Status />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<NotFound />} />

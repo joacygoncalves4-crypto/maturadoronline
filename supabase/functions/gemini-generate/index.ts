@@ -17,8 +17,9 @@ serve(async (req) => {
       throw new Error("Gemini API Token is required");
     }
 
+    // Use gemini-2.0-flash (current stable model)
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${geminiApiToken}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiToken}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -28,6 +29,12 @@ serve(async (req) => {
         }),
       }
     );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[Gemini] API error (${response.status}):`, errorText.slice(0, 300));
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
 
     const result = await response.json();
     const message = result.candidates?.[0]?.content?.parts?.[0]?.text || "E aí, tudo certo?";

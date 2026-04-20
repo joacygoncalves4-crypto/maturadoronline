@@ -2,6 +2,7 @@ import {
   LayoutDashboard, 
   Smartphone, 
   Flame, 
+  MessageSquare,
   Image, 
   Settings,
   Zap
@@ -24,6 +25,7 @@ const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Instâncias", url: "/instances", icon: Smartphone },
   { title: "Warmer", url: "/warmer", icon: Flame },
+  { title: "Mensagens", url: "/messages", icon: MessageSquare },
   { title: "Status", url: "/status", icon: Image },
   { title: "Configurações", url: "/settings", icon: Settings },
 ];
@@ -72,7 +74,7 @@ export function AppSidebar() {
 
       <SidebarFooter className="p-4 border-t border-border/50">
         <div className="text-xs text-muted-foreground text-center">
-          <p>v1.0.0</p>
+          <p>v2.0.0 — 24/7 Cron</p>
         </div>
       </SidebarFooter>
     </Sidebar>

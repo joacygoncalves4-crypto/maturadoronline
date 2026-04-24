@@ -1,5 +1,6 @@
-import { Smartphone, RefreshCw, Trash2, QrCode, Power, Loader2 } from "lucide-react";
+import { Smartphone, RefreshCw, Trash2, QrCode, Power, Loader2, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Instance } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ interface InstanceCardProps {
   onDisconnect: () => void;
   onRefresh: () => void;
   onDelete: () => void;
+  onToggleWarmer: (enabled: boolean) => void;
   isLoading?: boolean;
 }
 

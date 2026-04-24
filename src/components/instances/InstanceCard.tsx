@@ -21,6 +21,7 @@ export function InstanceCard({
   onDisconnect,
   onRefresh,
   onDelete,
+  onToggleWarmer,
   isLoading,
 }: InstanceCardProps) {
   const isConnected = instance.status === "open" || instance.status === "connected";

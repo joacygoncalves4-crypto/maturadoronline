@@ -46,6 +46,7 @@ export interface Instance {
   daily_limit: number;
   last_message_date: string | null;
   warming_start_date: string | null;
+  is_warmer_enabled: boolean;
   created_at: string;
   updated_at: string;
 }

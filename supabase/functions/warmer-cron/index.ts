@@ -127,6 +127,8 @@ serve(async (req) => {
       return jsonResponse({ status: "daily_limit_reached" });
     }
 
+    const baseUrl = evolutionApiUrl.replace(/\/$/, "");
+
     // 8. Fair pair rotation - pick the pair that has talked the LEAST
     // Generate all possible pairs from available instances
     const allPairs: { sender: typeof availableInstances[0]; receiver: typeof availableInstances[0] }[] = [];
@@ -182,6 +184,49 @@ serve(async (req) => {
       return jsonResponse({ status: "missing_phone_numbers" });
     }
 
+    const validateInstanceExists = async (instance: (typeof availableInstances)[number]) => {
+      const statusResponse = await fetch(`${baseUrl}/instance/connectionState/${encodeURIComponent(instance.instance_name)}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": evolutionApiKey,
+        },
+      });
+
+      const statusText = await statusResponse.text();
+      if (statusResponse.ok) return true;
+
+      console.log(`[Warmer Cron] Validation failed (${statusResponse.status}) for ${instance.instance_name}:`, statusText.slice(0, 200));
+
+      if (statusResponse.status === 404 || statusText.includes("does not exist") || statusText.includes("Not Found")) {
+        await supabase
+          .from("instances")
+          .update({
+            status: "disconnected",
+            phone_number: null,
+            qr_code: null,
+            is_warmer_enabled: false,
+          })
+          .eq("id", instance.id);
+
+        await supabase.from("logs").insert({
+          from_number: instance.phone_number || instance.instance_name,
+          to_number: instance.instance_name,
+          message_content: `[ERRO] Instância removida da Evolution: ${instance.instance_name}`,
+          type: "error",
+        });
+      }
+
+      return false;
+    };
+
+    const senderExists = await validateInstanceExists(sender);
+    const receiverExists = await validateInstanceExists(receiver);
+
+    if (!senderExists || !receiverExists) {
+      return jsonResponse({ status: "stale_instance_skipped" });
+    }
+
     // 9. Get a random message from the database
     const { data: messages, error: msgError } = await supabase
       .from("messages")
@@ -210,7 +255,6 @@ serve(async (req) => {
 
     // 10. Send message via Evolution API with humanized delay
     const humanDelay = getRandomDelay(3000, 8000); // 3-8 seconds
-    const baseUrl = evolutionApiUrl.replace(/\/$/, "");
 
     console.log(`[Warmer Cron] Sending: ${sender.instance_name} → ${receiver.phone_number}: "${messageText}"`);
 

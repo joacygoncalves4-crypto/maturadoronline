@@ -5,6 +5,7 @@ import {
   getLogs, 
   createLog,
   getActiveMessages,
+  updateInstance,
   SystemStatus,
   LogEntry,
   Instance
@@ -174,12 +175,35 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
       return true;
     } catch (error: any) {
       console.error("Error sending message:", error);
+
+      const errorMessage = error?.message || "Falha no envio";
+      const isMissingInstance = errorMessage.includes("Not Found") || errorMessage.includes("does not exist");
+
+      if (isMissingInstance) {
+        await Promise.allSettled([
+          updateInstance(from.id, {
+            status: "disconnected",
+            phone_number: null,
+            qr_code: null,
+            is_warmer_enabled: false,
+          }),
+          createLog({
+            from_number: from.phone_number || from.instance_name,
+            to_number: to.phone_number || to.instance_name,
+            message_content: `[ERRO] Instância removida da Evolution: ${from.instance_name}`,
+            type: "error",
+          }),
+        ]);
+
+        toast.error(`${from.instance_name} não existe mais na Evolution e foi removida do maturador`);
+        return false;
+      }
       
       // Log the error
       await createLog({
         from_number: from.phone_number || from.instance_name,
         to_number: to.phone_number || to.instance_name,
-        message_content: `[ERRO] ${error.message || "Falha no envio"}`,
+        message_content: `[ERRO] ${errorMessage}`,
         type: "error",
       });
 
@@ -188,9 +212,13 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
   };
 
   const runWarmerCycle = useCallback(async () => {
-    if (activeInstances.length < 2) {
+    const warmerEligibleInstances = activeInstances.filter(
+      (instance) => instance.is_warmer_enabled && instance.phone_number
+    );
+
+    if (warmerEligibleInstances.length < 2) {
       console.log("Not enough active instances for warming (need at least 2)");
-      toast.error("Precisa de pelo menos 2 chips conectados para maturação");
+      toast.error("Precisa de pelo menos 2 chips válidos no maturador");
       return;
     }
 
@@ -203,15 +231,9 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
 
     try {
       // Select two random different instances
-      const shuffled = [...activeInstances].sort(() => Math.random() - 0.5);
+      const shuffled = [...warmerEligibleInstances].sort(() => Math.random() - 0.5);
       const sender = shuffled[0];
       const receiver = shuffled[1];
-
-      if (!sender.phone_number || !receiver.phone_number) {
-        console.error("Instances don't have phone numbers");
-        toast.error("As instâncias precisam estar conectadas com número de telefone");
-        return;
-      }
 
       console.log(`Warmer cycle: ${sender.instance_name} -> ${receiver.instance_name}`);
 
@@ -235,7 +257,7 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
     } finally {
       setIsRunning(false);
     }
-  }, [activeInstances, settings, hasRequiredSettings]);
+  }, [activeInstances, hasRequiredSettings]);
 
   const toggleSystem = async (active: boolean) => {
     if (active && activeInstances.length < 2) {

@@ -85,6 +85,23 @@ export function InstanceCard({
         </div>
       )}
 
+      {/* Warmer participation toggle (only for connected instances) */}
+      {isConnected && (
+        <div className="flex items-center justify-between gap-2 mb-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+          <div className="flex items-center gap-2">
+            <Flame className={cn("w-4 h-4", instance.is_warmer_enabled ? "text-primary" : "text-muted-foreground")} />
+            <span className="text-sm">
+              {instance.is_warmer_enabled ? "No maturador" : "Fora do maturador"}
+            </span>
+          </div>
+          <Switch
+            checked={instance.is_warmer_enabled}
+            onCheckedChange={onToggleWarmer}
+            disabled={isLoading}
+          />
+        </div>
+      )}
+
       <div className="flex items-center gap-2">
         {isConnected ? (
           <Button 

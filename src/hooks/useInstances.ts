@@ -389,6 +389,137 @@ export function useInstances() {
     }
   };
 
+  // Toggle warmer participation for a specific instance
+  const toggleWarmerEnabled = async (instance: Instance, enabled: boolean) => {
+    try {
+      // Optimistic update
+      setInstances((prev) =>
+        prev.map((i) => (i.id === instance.id ? { ...i, is_warmer_enabled: enabled } : i))
+      );
+      await updateInstance(instance.id, { is_warmer_enabled: enabled });
+      toast.success(enabled ? "Incluído no maturador" : "Removido do maturador");
+    } catch (error: any) {
+      console.error("Error toggling warmer:", error);
+      toast.error("Erro ao atualizar");
+      await loadInstances();
+    }
+  };
+
+  // Import all CONNECTED instances from Evolution API that aren't local yet
+  const importFromEvolution = async (selectedNames?: string[]) => {
+    if (!hasRequiredSettings) {
+      toast.error("Configure a Evolution API nas configurações primeiro");
+      return { imported: 0, skipped: 0 };
+    }
+
+    try {
+      setActionLoading("import");
+
+      const { data, error } = await supabase.functions.invoke("evolution-proxy", {
+        body: {
+          action: "fetchInstances",
+          evolutionApiUrl: settings.evolutionApiUrl,
+          evolutionApiKey: settings.evolutionApiKey,
+        },
+      });
+
+      if (error) throw error;
+      const evoInstances = Array.isArray(data) ? data : [];
+
+      const existingNames = new Set(
+        instances.map((i) => i.instance_name.toLowerCase())
+      );
+
+      let imported = 0;
+      let skipped = 0;
+
+      for (const raw of evoInstances) {
+        const instanceData = raw.instance || raw;
+        const name = instanceData.instanceName || instanceData.name || raw.name;
+        const owner = instanceData.owner || raw.ownerJid || raw.owner;
+        const connectionStatus =
+          instanceData.state || instanceData.connectionStatus || raw.connectionStatus;
+
+        if (!name) continue;
+        // Only import CONNECTED instances
+        if (connectionStatus !== "open") {
+          skipped++;
+          continue;
+        }
+        // Optional filter by user selection
+        if (selectedNames && !selectedNames.includes(name)) continue;
+        // Skip already-imported
+        if (existingNames.has(name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+
+        const phoneNumber = owner ? (owner.includes("@") ? owner.split("@")[0] : owner) : null;
+
+        const { error: insertError } = await supabase.from("instances").insert({
+          instance_name: name,
+          instance_id: name,
+          status: "open",
+          phone_number: phoneNumber,
+          warming_start_date: new Date().toISOString().split("T")[0],
+          is_warmer_enabled: true,
+        });
+
+        if (!insertError) imported++;
+      }
+
+      await loadInstances();
+      if (imported > 0) {
+        toast.success(`${imported} instância(s) importada(s)`);
+      } else {
+        toast.info("Nenhuma instância nova para importar");
+      }
+      return { imported, skipped };
+    } catch (error: any) {
+      console.error("Error importing from Evolution:", error);
+      toast.error(error.message || "Erro ao importar instâncias");
+      return { imported: 0, skipped: 0 };
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Fetch CONNECTED instances available to import (not yet local)
+  const fetchAvailableToImport = async (): Promise<
+    { name: string; phoneNumber: string | null; status: string }[]
+  > => {
+    if (!hasRequiredSettings) {
+      toast.error("Configure a Evolution API nas configurações primeiro");
+      return [];
+    }
+    const { data, error } = await supabase.functions.invoke("evolution-proxy", {
+      body: {
+        action: "fetchInstances",
+        evolutionApiUrl: settings.evolutionApiUrl,
+        evolutionApiKey: settings.evolutionApiKey,
+      },
+    });
+    if (error) {
+      toast.error("Erro ao buscar instâncias");
+      return [];
+    }
+    const evoInstances = Array.isArray(data) ? data : [];
+    const existingNames = new Set(instances.map((i) => i.instance_name.toLowerCase()));
+    const available: { name: string; phoneNumber: string | null; status: string }[] = [];
+    for (const raw of evoInstances) {
+      const instanceData = raw.instance || raw;
+      const name = instanceData.instanceName || instanceData.name || raw.name;
+      const owner = instanceData.owner || raw.ownerJid || raw.owner;
+      const connectionStatus =
+        instanceData.state || instanceData.connectionStatus || raw.connectionStatus;
+      if (!name || connectionStatus !== "open") continue;
+      if (existingNames.has(name.toLowerCase())) continue;
+      const phoneNumber = owner ? (owner.includes("@") ? owner.split("@")[0] : owner) : null;
+      available.push({ name, phoneNumber, status: connectionStatus });
+    }
+    return available;
+  };
+
   const activeInstances = instances.filter(
     (i) => i.status === "open" || i.status === "connected"
   );
@@ -404,6 +535,9 @@ export function useInstances() {
     refreshInstance,
     deleteInstance,
     syncAllNumbers,
+    toggleWarmerEnabled,
+    importFromEvolution,
+    fetchAvailableToImport,
     reload: loadInstances,
   };
 }

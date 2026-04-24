@@ -1,5 +1,6 @@
-import { Smartphone, RefreshCw, Trash2, QrCode, Power, Loader2 } from "lucide-react";
+import { Smartphone, RefreshCw, Trash2, QrCode, Power, Loader2, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Instance } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ interface InstanceCardProps {
   onDisconnect: () => void;
   onRefresh: () => void;
   onDelete: () => void;
+  onToggleWarmer: (enabled: boolean) => void;
   isLoading?: boolean;
 }
 
@@ -19,6 +21,7 @@ export function InstanceCard({
   onDisconnect,
   onRefresh,
   onDelete,
+  onToggleWarmer,
   isLoading,
 }: InstanceCardProps) {
   const isConnected = instance.status === "open" || instance.status === "connected";
@@ -79,6 +82,23 @@ export function InstanceCard({
         <div className="flex items-center justify-center py-4 mb-4">
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
           <span className="ml-2 text-sm text-muted-foreground">Processando...</span>
+        </div>
+      )}
+
+      {/* Warmer participation toggle (only for connected instances) */}
+      {isConnected && (
+        <div className="flex items-center justify-between gap-2 mb-3 p-2.5 rounded-lg bg-muted/30 border border-border/50">
+          <div className="flex items-center gap-2">
+            <Flame className={cn("w-4 h-4", instance.is_warmer_enabled ? "text-primary" : "text-muted-foreground")} />
+            <span className="text-sm">
+              {instance.is_warmer_enabled ? "No maturador" : "Fora do maturador"}
+            </span>
+          </div>
+          <Switch
+            checked={instance.is_warmer_enabled}
+            onCheckedChange={onToggleWarmer}
+            disabled={isLoading}
+          />
         </div>
       )}
 

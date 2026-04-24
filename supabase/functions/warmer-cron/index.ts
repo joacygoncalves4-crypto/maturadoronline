@@ -127,6 +127,8 @@ serve(async (req) => {
       return jsonResponse({ status: "daily_limit_reached" });
     }
 
+    const baseUrl = evolutionApiUrl.replace(/\/$/, "");
+
     // 8. Fair pair rotation - pick the pair that has talked the LEAST
     // Generate all possible pairs from available instances
     const allPairs: { sender: typeof availableInstances[0]; receiver: typeof availableInstances[0] }[] = [];
@@ -253,7 +255,6 @@ serve(async (req) => {
 
     // 10. Send message via Evolution API with humanized delay
     const humanDelay = getRandomDelay(3000, 8000); // 3-8 seconds
-    const baseUrl = evolutionApiUrl.replace(/\/$/, "");
 
     console.log(`[Warmer Cron] Sending: ${sender.instance_name} → ${receiver.phone_number}: "${messageText}"`);
 

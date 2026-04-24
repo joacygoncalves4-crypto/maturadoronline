@@ -78,11 +78,12 @@ serve(async (req) => {
       return jsonResponse({ status: "no_api_config" });
     }
 
-    // 4. Get active instances
+    // 4. Get active instances enabled for warmer
     const { data: instances } = await supabase
       .from("instances")
       .select("*")
-      .in("status", ["open", "connected"]);
+      .in("status", ["open", "connected"])
+      .eq("is_warmer_enabled", true);
 
     if (!instances || instances.length < 2) {
       console.log(`[Warmer Cron] Not enough active instances (${instances?.length || 0})`);

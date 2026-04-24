@@ -21,6 +21,7 @@ export type Database = {
           id: string
           instance_id: string | null
           instance_name: string
+          is_warmer_enabled: boolean
           last_message_date: string | null
           messages_sent_today: number
           phone_number: string | null
@@ -36,6 +37,7 @@ export type Database = {
           id?: string
           instance_id?: string | null
           instance_name: string
+          is_warmer_enabled?: boolean
           last_message_date?: string | null
           messages_sent_today?: number
           phone_number?: string | null
@@ -51,6 +53,7 @@ export type Database = {
           id?: string
           instance_id?: string | null
           instance_name?: string
+          is_warmer_enabled?: boolean
           last_message_date?: string | null
           messages_sent_today?: number
           phone_number?: string | null

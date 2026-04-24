@@ -5,6 +5,7 @@ import {
   getLogs, 
   createLog,
   getActiveMessages,
+  updateInstance,
   SystemStatus,
   LogEntry,
   Instance

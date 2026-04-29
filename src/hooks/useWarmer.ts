@@ -217,8 +217,22 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
     );
 
     if (warmerEligibleInstances.length < 2) {
-      console.log("Not enough active instances for warming (need at least 2)");
-      toast.error("Precisa de pelo menos 2 chips válidos no maturador");
+      const enabled = activeInstances.filter(i => i.is_warmer_enabled);
+      const semNumero = enabled.filter(i => !i.phone_number).map(i => i.instance_name);
+      const semToggle = activeInstances.filter(i => !i.is_warmer_enabled).map(i => i.instance_name);
+
+      console.log("Not enough active instances for warming (need at least 2)", { semNumero, semToggle });
+
+      if (semNumero.length > 0) {
+        toast.error(
+          `${semNumero.length} chip(s) sem número sincronizado. Clique em "Sincronizar Números" na página Instâncias.`,
+          { duration: 7000 }
+        );
+      } else if (semToggle.length > 0) {
+        toast.error(`Ative o toggle do maturador em pelo menos 2 instâncias`);
+      } else {
+        toast.error("Precisa de pelo menos 2 chips válidos (conectados + com número) no maturador");
+      }
       return;
     }
 

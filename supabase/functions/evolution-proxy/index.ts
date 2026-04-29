@@ -141,10 +141,30 @@ serve(async (req) => {
       result = { raw: responseText };
     }
 
-    // Handle Evolution API v2 response format
+    // Handle Evolution API v2 response format - ALWAYS return 200 so client can read body
     if (!response.ok) {
-      const errorMsg = result.message || result.error || result.raw || "Evolution API error";
-      throw new Error(errorMsg);
+      const errorMsg =
+        (typeof result?.response?.message === "string" && result.response.message) ||
+        (Array.isArray(result?.response?.message) && result.response.message.join("; ")) ||
+        result?.message ||
+        result?.error ||
+        result?.raw ||
+        `Evolution API error (${response.status})`;
+
+      console.error("[Evolution Proxy] Upstream error:", response.status, errorMsg);
+
+      return new Response(
+        JSON.stringify({
+          error: errorMsg,
+          status: response.status,
+          notFound: response.status === 404,
+          upstream: result,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 200,
+        }
+      );
     }
 
     return new Response(JSON.stringify(result), {
@@ -153,9 +173,12 @@ serve(async (req) => {
     });
   } catch (error: any) {
     console.error("[Evolution Proxy] Error:", error.message);
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500,
-    });
+    return new Response(
+      JSON.stringify({ error: error.message || "Proxy failure", status: 500 }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200,
+      }
+    );
   }
 });

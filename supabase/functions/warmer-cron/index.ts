@@ -384,13 +384,25 @@ serve(async (req) => {
         type: "error",
       });
 
-      // If receiver number is invalid (400), disable warmer for receiver to avoid loop
-      if (sendResponse.status === 400 && /number|jid|exist|invalid/i.test(upstreamMsg)) {
+      // Only disable receiver for clearly INVALID numbers, NOT transient socket errors
+      // like "Connection Closed" (those just mean the WhatsApp session blipped).
+      const isTransient = /connection closed|timeout|econn|socket|503|504|econnreset/i.test(upstreamMsg);
+      const looksInvalidNumber = sendResponse.status === 400 &&
+        /number|jid|exist|invalid|not.*registered|not.*on.*whatsapp/i.test(upstreamMsg) &&
+        !isTransient;
+      if (looksInvalidNumber) {
         await supabase
           .from("instances")
           .update({ is_warmer_enabled: false })
           .eq("id", receiver.id);
       }
+
+      // IMPORTANT: advance last_execution even on failure, so the interval gate
+      // moves forward and we don't hammer the same broken pair every minute.
+      await supabase
+        .from("system_status")
+        .update({ last_execution: new Date().toISOString() })
+        .eq("id", status.id);
 
       return jsonResponse({
         status: "send_failed",

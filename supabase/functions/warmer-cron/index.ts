@@ -31,8 +31,17 @@ serve(async (req) => {
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
+  // Allow forcing a manual run from the UI (bypass interval gate)
+  let force = false;
   try {
-    console.log("[Warmer Cron] Starting cycle...");
+    if (req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      force = !!body?.force;
+    }
+  } catch {}
+
+  try {
+    console.log(`[Warmer Cron] Starting cycle... (force=${force})`);
 
     // 1. Check system status
     const { data: status, error: statusError } = await supabase
@@ -48,6 +57,18 @@ serve(async (req) => {
     if (!status.is_active) {
       console.log("[Warmer Cron] System is paused");
       return jsonResponse({ status: "paused" });
+    }
+
+    // 1b. Respect configured interval — skip if last execution was too recent
+    const intervalMin = Math.max(1, status.interval_minutes || 5);
+    if (!force && status.last_execution) {
+      const elapsedMs = Date.now() - new Date(status.last_execution).getTime();
+      const requiredMs = intervalMin * 60 * 1000;
+      if (elapsedMs < requiredMs) {
+        const remaining = Math.ceil((requiredMs - elapsedMs) / 1000);
+        console.log(`[Warmer Cron] Interval not reached (${Math.floor(elapsedMs/1000)}s/${requiredMs/1000}s, wait ${remaining}s more)`);
+        return jsonResponse({ status: "interval_not_reached", remainingSeconds: remaining });
+      }
     }
 
     // 2. Check Brazil time - only run during active hours

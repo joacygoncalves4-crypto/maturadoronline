@@ -325,33 +325,18 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
     }
   };
 
-  // Warmer loop effect - also acts as backup when cron is available
+  // NOTE: Warming runs 100% on the backend via pg_cron (warmer-cron edge function).
+  // The browser is ONLY a viewer. We do NOT trigger cycles here so that closing the
+  // tab has no effect on warming, and so we don't double-fire with the cron.
+  // Manual cycle remains available via the "Run Now" button (runManualCycle).
   useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    if (systemStatus?.is_active && activeInstances.length >= 2 && hasRequiredSettings) {
-      const intervalMs = (systemStatus.interval_minutes || 5) * 60 * 1000;
-      
-      console.log(`Warmer activated: running every ${systemStatus.interval_minutes} minutes (browser backup)`);
-      
-      // Run immediately on activation
-      runWarmerCycle();
-      
-      intervalRef.current = setInterval(() => {
-        console.log("Warmer interval triggered (browser)");
-        runWarmerCycle();
-      }, intervalMs);
-    }
-
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [systemStatus?.is_active, systemStatus?.interval_minutes, activeInstances.length, hasRequiredSettings]);
+  }, []);
 
   const todayLogs = logs.filter((log) => {
     const today = new Date();

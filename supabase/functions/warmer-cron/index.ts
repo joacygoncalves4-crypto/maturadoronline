@@ -129,55 +129,82 @@ serve(async (req) => {
 
     const baseUrl = evolutionApiUrl.replace(/\/$/, "");
 
-    // 8. Fair pair rotation - pick the pair that has talked the LEAST
-    // Generate all possible pairs from available instances
-    const allPairs: { sender: typeof availableInstances[0]; receiver: typeof availableInstances[0] }[] = [];
-    for (let i = 0; i < availableInstances.length; i++) {
-      for (let j = 0; j < availableInstances.length; j++) {
-        if (i !== j) {
-          allPairs.push({ sender: availableInstances[i], receiver: availableInstances[j] });
-        }
+    // 8. MATRIX rotation - guarantees ALL pairs talk to each other (group chat simulation)
+    // Build all UNORDERED pairs (A<->B counts as one conversation channel)
+    const validInstances = availableInstances.filter((i) => i.phone_number);
+    const allPairs: { a: typeof validInstances[0]; b: typeof validInstances[0]; key: string }[] = [];
+    for (let i = 0; i < validInstances.length; i++) {
+      for (let j = i + 1; j < validInstances.length; j++) {
+        const a = validInstances[i];
+        const b = validInstances[j];
+        const key = [a.phone_number, b.phone_number].sort().join("<->");
+        allPairs.push({ a, b, key });
       }
     }
 
-    // Check recent logs to find the least-used pair
-    const { data: recentLogs } = await supabase
-      .from("logs")
-      .select("from_number, to_number")
-      .eq("type", "message")
-      .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-      .order("created_at", { ascending: false })
-      .limit(500);
-
-    // Count messages per pair
-    const pairCounts: Record<string, number> = {};
-    for (const log of recentLogs || []) {
-      const key = `${log.from_number}->${log.to_number}`;
-      pairCounts[key] = (pairCounts[key] || 0) + 1;
-    }
-
-    // Score each pair (lower = should be picked first)
-    const scoredPairs = allPairs
-      .filter((p) => p.sender.phone_number && p.receiver.phone_number)
-      .map((p) => ({
-        ...p,
-        score: (pairCounts[`${p.sender.phone_number}->${p.receiver.phone_number}`] || 0),
-      }))
-      .sort((a, b) => a.score - b.score);
-
-    if (scoredPairs.length === 0) {
+    if (allPairs.length === 0) {
       console.log("[Warmer Cron] No valid pairs found");
       return jsonResponse({ status: "no_valid_pairs" });
     }
 
-    // Pick from the least-used pairs (with some randomness among ties)
-    const minScore = scoredPairs[0].score;
-    const leastUsedPairs = scoredPairs.filter((p) => p.score <= minScore + 1);
-    const chosen = leastUsedPairs[Math.floor(Math.random() * leastUsedPairs.length)];
-    const sender = chosen.sender;
-    const receiver = chosen.receiver;
+    // Get recent logs (last 3 days) to count interactions per UNORDERED pair
+    const { data: recentLogs } = await supabase
+      .from("logs")
+      .select("from_number, to_number, created_at")
+      .eq("type", "message")
+      .gte("created_at", new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1000);
 
-    console.log(`[Warmer Cron] Fair rotation: pair score=${chosen.score}, least-used among ${leastUsedPairs.length} candidates`);
+    // Count messages per unordered pair AND track last interaction time
+    const pairCounts: Record<string, number> = {};
+    const pairLastSeen: Record<string, number> = {};
+    // Also count how many messages each individual sender sent (for sender balance)
+    const senderCounts: Record<string, number> = {};
+
+    for (const log of recentLogs || []) {
+      const key = [log.from_number, log.to_number].sort().join("<->");
+      pairCounts[key] = (pairCounts[key] || 0) + 1;
+      const ts = new Date(log.created_at).getTime();
+      if (!pairLastSeen[key] || ts > pairLastSeen[key]) pairLastSeen[key] = ts;
+      senderCounts[log.from_number] = (senderCounts[log.from_number] || 0) + 1;
+    }
+
+    // Score each pair: PRIMARY = msg count (lower wins), SECONDARY = last seen (older wins)
+    const scoredPairs = allPairs
+      .map((p) => ({
+        ...p,
+        count: pairCounts[p.key] || 0,
+        lastSeen: pairLastSeen[p.key] || 0,
+      }))
+      .sort((x, y) => {
+        if (x.count !== y.count) return x.count - y.count;
+        return x.lastSeen - y.lastSeen; // oldest interaction first
+      });
+
+    // STRICT fairness: pick only from the pairs with the absolute minimum count
+    const minCount = scoredPairs[0].count;
+    const leastUsedPairs = scoredPairs.filter((p) => p.count === minCount);
+
+    // Among least-used pairs, pick the one with the OLDEST last interaction
+    const chosen = leastUsedPairs[0];
+
+    // Decide direction based on which side has sent FEWER messages overall (balance senders)
+    const aSent = senderCounts[chosen.a.phone_number!] || 0;
+    const bSent = senderCounts[chosen.b.phone_number!] || 0;
+    let sender: typeof chosen.a;
+    let receiver: typeof chosen.a;
+    if (aSent < bSent) {
+      sender = chosen.a; receiver = chosen.b;
+    } else if (bSent < aSent) {
+      sender = chosen.b; receiver = chosen.a;
+    } else {
+      // tie -> random direction
+      if (Math.random() < 0.5) { sender = chosen.a; receiver = chosen.b; }
+      else { sender = chosen.b; receiver = chosen.a; }
+    }
+
+    console.log(`[Warmer Cron] Matrix rotation: pair "${chosen.a.instance_name}<->${chosen.b.instance_name}" count=${chosen.count}, ${leastUsedPairs.length}/${allPairs.length} pairs at min. Sender balance: ${sender.instance_name}(${sender.phone_number === chosen.a.phone_number ? aSent : bSent}) → ${receiver.instance_name}`);
 
     if (!sender.phone_number || !receiver.phone_number) {
       console.log("[Warmer Cron] Instances missing phone numbers");

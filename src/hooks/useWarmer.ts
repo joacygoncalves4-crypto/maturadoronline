@@ -212,66 +212,37 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
   };
 
   const runWarmerCycle = useCallback(async () => {
-    const warmerEligibleInstances = activeInstances.filter(
-      (instance) => instance.is_warmer_enabled && instance.phone_number
-    );
-
-    if (warmerEligibleInstances.length < 2) {
-      const enabled = activeInstances.filter(i => i.is_warmer_enabled);
-      const semNumero = enabled.filter(i => !i.phone_number).map(i => i.instance_name);
-      const semToggle = activeInstances.filter(i => !i.is_warmer_enabled).map(i => i.instance_name);
-
-      console.log("Not enough active instances for warming (need at least 2)", { semNumero, semToggle });
-
-      if (semNumero.length > 0) {
-        toast.error(
-          `${semNumero.length} chip(s) sem número sincronizado. Clique em "Sincronizar Números" na página Instâncias.`,
-          { duration: 7000 }
-        );
-      } else if (semToggle.length > 0) {
-        toast.error(`Ative o toggle do maturador em pelo menos 2 instâncias`);
-      } else {
-        toast.error("Precisa de pelo menos 2 chips válidos (conectados + com número) no maturador");
-      }
-      return;
-    }
-
-    if (!hasRequiredSettings) {
-      toast.error("Configure a Evolution API primeiro");
-      return;
-    }
-
+    // Manual trigger: just invoke the backend cron with force=true.
+    // The backend owns ALL the logic (rotation, cooldowns, sending).
     setIsRunning(true);
-
     try {
-      // Select two random different instances
-      const shuffled = [...warmerEligibleInstances].sort(() => Math.random() - 0.5);
-      const sender = shuffled[0];
-      const receiver = shuffled[1];
-
-      console.log(`Warmer cycle: ${sender.instance_name} -> ${receiver.instance_name}`);
-
-      // Generate message
-      const message = await generateMessage();
-      console.log(`Generated message: "${message}"`);
-
-      // Send message
-      const success = await sendMessage(sender, receiver, message);
-
-      if (success) {
-        // Update last execution
-        await updateSystemStatus({ last_execution: new Date().toISOString() });
-        toast.success(`Mensagem enviada: ${sender.phone_number} → ${receiver.phone_number}`);
+      const { data, error } = await supabase.functions.invoke("warmer-cron", {
+        body: { force: true },
+      });
+      if (error) throw error;
+      if (data?.status === "success") {
+        toast.success(`Mensagem enviada: ${data.sender} → ${data.receiver}`);
+      } else if (data?.status === "send_failed") {
+        toast.error(`Falha no envio: ${data.error}`);
+      } else if (data?.status === "paused") {
+        toast.info("Sistema está pausado. Ative primeiro.");
+      } else if (data?.status === "sleeping") {
+        toast.info(`Fora do horário ativo (${data.hour}h BRT)`);
+      } else if (data?.status === "insufficient_instances") {
+        toast.error("Precisa de pelo menos 2 chips ativos no maturador");
+      } else if (data?.status === "daily_limit_reached") {
+        toast.info("Limite diário atingido para todos os chips");
       } else {
-        toast.error("Falha ao enviar mensagem");
+        toast.info(`Status: ${data?.status || "ok"}`);
       }
+      await loadData();
     } catch (error: any) {
-      console.error("Warmer cycle error:", error);
-      toast.error("Erro no ciclo de maturação");
+      console.error("Manual cycle error:", error);
+      toast.error("Erro ao executar ciclo manual");
     } finally {
       setIsRunning(false);
     }
-  }, [activeInstances, hasRequiredSettings]);
+  }, [loadData]);
 
   const toggleSystem = async (active: boolean) => {
     if (active && activeInstances.length < 2) {
@@ -325,33 +296,18 @@ MÁXIMO 12 palavras. NÃO use aspas. Seja criativo e varie o estilo.`,
     }
   };
 
-  // Warmer loop effect - also acts as backup when cron is available
+  // NOTE: Warming runs 100% on the backend via pg_cron (warmer-cron edge function).
+  // The browser is ONLY a viewer. We do NOT trigger cycles here so that closing the
+  // tab has no effect on warming, and so we don't double-fire with the cron.
+  // Manual cycle remains available via the "Run Now" button (runManualCycle).
   useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    if (systemStatus?.is_active && activeInstances.length >= 2 && hasRequiredSettings) {
-      const intervalMs = (systemStatus.interval_minutes || 5) * 60 * 1000;
-      
-      console.log(`Warmer activated: running every ${systemStatus.interval_minutes} minutes (browser backup)`);
-      
-      // Run immediately on activation
-      runWarmerCycle();
-      
-      intervalRef.current = setInterval(() => {
-        console.log("Warmer interval triggered (browser)");
-        runWarmerCycle();
-      }, intervalMs);
-    }
-
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [systemStatus?.is_active, systemStatus?.interval_minutes, activeInstances.length, hasRequiredSettings]);
+  }, []);
 
   const todayLogs = logs.filter((log) => {
     const today = new Date();

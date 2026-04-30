@@ -275,14 +275,39 @@ serve(async (req) => {
     console.log(`[Warmer Cron] Send result (${sendResponse.status}):`, sendResult.slice(0, 300));
 
     if (!sendResponse.ok) {
+      let parsedError: any = null;
+      try { parsedError = JSON.parse(sendResult); } catch {}
+      const upstreamMsg =
+        (typeof parsedError?.response?.message === "string" && parsedError.response.message) ||
+        (Array.isArray(parsedError?.response?.message) && parsedError.response.message.join("; ")) ||
+        parsedError?.message ||
+        parsedError?.error ||
+        sendResult.slice(0, 300) ||
+        `HTTP ${sendResponse.status}`;
+
       // Log error
       await supabase.from("logs").insert({
         from_number: sender.phone_number || sender.instance_name,
         to_number: receiver.phone_number || receiver.instance_name,
-        message_content: `[ERRO] ${sendResult.slice(0, 200)}`,
+        message_content: `[ERRO ${sendResponse.status}] ${upstreamMsg}`.slice(0, 500),
         type: "error",
       });
-      throw new Error(`Evolution API error: ${sendResponse.status}`);
+
+      // If receiver number is invalid (400), disable warmer for receiver to avoid loop
+      if (sendResponse.status === 400 && /number|jid|exist|invalid/i.test(upstreamMsg)) {
+        await supabase
+          .from("instances")
+          .update({ is_warmer_enabled: false })
+          .eq("id", receiver.id);
+      }
+
+      return jsonResponse({
+        status: "send_failed",
+        upstreamStatus: sendResponse.status,
+        error: upstreamMsg,
+        sender: sender.instance_name,
+        receiver: receiver.instance_name,
+      });
     }
 
     // 11. Log success
@@ -375,7 +400,7 @@ serve(async (req) => {
     });
   } catch (error: any) {
     console.error("[Warmer Cron] Error:", error.message);
-    return jsonResponse({ status: "error", error: error.message }, 500);
+    return jsonResponse({ status: "error", error: error.message }, 200);
   }
 });
 

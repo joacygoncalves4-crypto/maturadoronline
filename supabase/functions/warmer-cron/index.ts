@@ -400,7 +400,7 @@ serve(async (req) => {
     });
   } catch (error: any) {
     console.error("[Warmer Cron] Error:", error.message);
-    return jsonResponse({ status: "error", error: error.message }, 500);
+    return jsonResponse({ status: "error", error: error.message }, 200);
   }
 });
 

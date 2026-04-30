@@ -191,31 +191,74 @@ serve(async (req) => {
       senderCounts[log.from_number] = (senderCounts[log.from_number] || 0) + 1;
     }
 
+    // Cooldown windows for failures (in minutes)
+    const PAIR_COOLDOWN_MIN = 15;       // skip a failing pair for 15 min
+    const INSTANCE_COOLDOWN_MIN = 10;   // skip a failing instance (as sender) for 10 min
+    const cooldownSinceMs = Date.now() - Math.max(PAIR_COOLDOWN_MIN, INSTANCE_COOLDOWN_MIN) * 60 * 1000;
+
+    // Fetch recent ERROR logs to compute cooldowns
+    const { data: recentErrors } = await supabase
+      .from("logs")
+      .select("from_number, to_number, created_at")
+      .eq("type", "error")
+      .gte("created_at", new Date(cooldownSinceMs).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const pairLastError: Record<string, number> = {};
+    const senderLastError: Record<string, number> = {};
+    for (const e of recentErrors || []) {
+      const key = [e.from_number, e.to_number].sort().join("<->");
+      const ts = new Date(e.created_at).getTime();
+      if (!pairLastError[key] || ts > pairLastError[key]) pairLastError[key] = ts;
+      if (!senderLastError[e.from_number] || ts > senderLastError[e.from_number]) {
+        senderLastError[e.from_number] = ts;
+      }
+    }
+
+    const now = Date.now();
+    const isPairInCooldown = (key: string) =>
+      pairLastError[key] && (now - pairLastError[key]) < PAIR_COOLDOWN_MIN * 60 * 1000;
+    const isSenderInCooldown = (phone: string) =>
+      senderLastError[phone] && (now - senderLastError[phone]) < INSTANCE_COOLDOWN_MIN * 60 * 1000;
+
     // Score each pair: PRIMARY = msg count (lower wins), SECONDARY = last seen (older wins)
     const scoredPairs = allPairs
       .map((p) => ({
         ...p,
         count: pairCounts[p.key] || 0,
         lastSeen: pairLastSeen[p.key] || 0,
+        inCooldown: isPairInCooldown(p.key),
       }))
       .sort((x, y) => {
         if (x.count !== y.count) return x.count - y.count;
         return x.lastSeen - y.lastSeen; // oldest interaction first
       });
 
+    // Prefer pairs NOT in cooldown. If all are in cooldown, fall back to all pairs.
+    const cleanPairs = scoredPairs.filter((p) => !p.inCooldown);
+    const candidatePool = cleanPairs.length > 0 ? cleanPairs : scoredPairs;
+
     // STRICT fairness: pick only from the pairs with the absolute minimum count
-    const minCount = scoredPairs[0].count;
-    const leastUsedPairs = scoredPairs.filter((p) => p.count === minCount);
+    const minCount = candidatePool[0].count;
+    const leastUsedPairs = candidatePool.filter((p) => p.count === minCount);
 
     // Among least-used pairs, pick the one with the OLDEST last interaction
     const chosen = leastUsedPairs[0];
 
     // Decide direction based on which side has sent FEWER messages overall (balance senders)
+    // Also: if one side is in sender-cooldown, prefer the other as sender.
     const aSent = senderCounts[chosen.a.phone_number!] || 0;
     const bSent = senderCounts[chosen.b.phone_number!] || 0;
+    const aCooldown = isSenderInCooldown(chosen.a.phone_number!);
+    const bCooldown = isSenderInCooldown(chosen.b.phone_number!);
     let sender: typeof chosen.a;
     let receiver: typeof chosen.a;
-    if (aSent < bSent) {
+    if (aCooldown && !bCooldown) {
+      sender = chosen.b; receiver = chosen.a;
+    } else if (bCooldown && !aCooldown) {
+      sender = chosen.a; receiver = chosen.b;
+    } else if (aSent < bSent) {
       sender = chosen.a; receiver = chosen.b;
     } else if (bSent < aSent) {
       sender = chosen.b; receiver = chosen.a;
@@ -225,7 +268,7 @@ serve(async (req) => {
       else { sender = chosen.b; receiver = chosen.a; }
     }
 
-    console.log(`[Warmer Cron] Matrix rotation: pair "${chosen.a.instance_name}<->${chosen.b.instance_name}" count=${chosen.count}, ${leastUsedPairs.length}/${allPairs.length} pairs at min. Sender balance: ${sender.instance_name}(${sender.phone_number === chosen.a.phone_number ? aSent : bSent}) → ${receiver.instance_name}`);
+    console.log(`[Warmer Cron] Matrix rotation: pair "${chosen.a.instance_name}<->${chosen.b.instance_name}" count=${chosen.count}, ${leastUsedPairs.length}/${allPairs.length} pairs at min, cleanPool=${cleanPairs.length}/${scoredPairs.length}. Sender: ${sender.instance_name} → ${receiver.instance_name}`);
 
     if (!sender.phone_number || !receiver.phone_number) {
       console.log("[Warmer Cron] Instances missing phone numbers");

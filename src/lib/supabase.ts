@@ -134,6 +134,12 @@ export interface SystemStatus {
   max_interval_minutes: number;
   enable_bidirectional: boolean;
   daily_limit_per_chip: number;
+  enable_status_posting: boolean;
+  status_interval_hours: number;
+  last_status_post: string | null;
+  status_caption_random: boolean;
+  enable_group_messages: boolean;
+  group_message_ratio: number;
   updated_at: string;
 }
 
@@ -305,16 +311,92 @@ export async function deleteMedia(id: string): Promise<boolean> {
 // Storage helpers
 export async function uploadMedia(file: File): Promise<string | null> {
   const fileName = `${Date.now()}-${file.name}`;
-  
+
   const { data, error } = await supabase.storage
     .from('media')
     .upload(fileName, file);
-  
+
   if (error || !data) return null;
-  
+
   const { data: urlData } = supabase.storage
     .from('media')
     .getPublicUrl(fileName);
-  
+
   return urlData.publicUrl;
+}
+
+// ─── GRUPOS DE MATURAÇÃO ──────────────────────────
+export interface Group {
+  id: string;
+  group_jid: string;
+  name: string;
+  invite_link: string | null;
+  description: string | null;
+  is_active: boolean;
+  messages_sent_count: number;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupMember {
+  id: string;
+  group_id: string;
+  instance_id: string;
+  joined_at: string;
+  is_admin: boolean;
+}
+
+export async function getGroups(): Promise<Group[]> {
+  const { data, error } = await supabase
+    .from('groups')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return data;
+}
+
+export async function createGroup(group: Partial<Group>): Promise<Group | null> {
+  const { data, error } = await supabase
+    .from('groups')
+    .insert(group)
+    .select()
+    .single();
+  if (error || !data) return null;
+  return data;
+}
+
+export async function updateGroup(id: string, updates: Partial<Group>): Promise<boolean> {
+  const { error } = await supabase.from('groups').update(updates).eq('id', id);
+  return !error;
+}
+
+export async function deleteGroup(id: string): Promise<boolean> {
+  const { error } = await supabase.from('groups').delete().eq('id', id);
+  return !error;
+}
+
+export async function getGroupMembers(groupId: string): Promise<GroupMember[]> {
+  const { data, error } = await supabase
+    .from('group_members')
+    .select('*')
+    .eq('group_id', groupId);
+  if (error || !data) return [];
+  return data;
+}
+
+export async function addGroupMember(groupId: string, instanceId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('group_members')
+    .insert({ group_id: groupId, instance_id: instanceId });
+  return !error;
+}
+
+export async function removeGroupMember(groupId: string, instanceId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('group_members')
+    .delete()
+    .eq('group_id', groupId)
+    .eq('instance_id', instanceId);
+  return !error;
 }

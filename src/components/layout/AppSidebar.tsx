@@ -1,11 +1,12 @@
-import { 
-  LayoutDashboard, 
-  Smartphone, 
-  Flame, 
+import {
+  LayoutDashboard,
+  Smartphone,
+  Flame,
   MessageSquare,
-  Image, 
+  Image,
   Settings,
-  Zap
+  Zap,
+  Users,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
@@ -27,6 +28,7 @@ const menuItems = [
   { title: "Warmer", url: "/warmer", icon: Flame },
   { title: "Mensagens", url: "/messages", icon: MessageSquare },
   { title: "Status", url: "/status", icon: Image },
+  { title: "Grupos", url: "/groups", icon: Users },
   { title: "Configurações", url: "/settings", icon: Settings },
 ];
 

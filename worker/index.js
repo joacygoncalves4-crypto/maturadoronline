@@ -1,7 +1,7 @@
 const cron = require("node-cron");
 
-const SUPABASE_URL = process.env.SUPABASE_URL || "https://htshmcvuwxxmlvkifpex.supabase.co";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh0c2htY3Z1d3h4bWx2a2lmcGV4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg1MDAzMjQsImV4cCI6MjA4NDA3NjMyNH0.ZUCrgMScECMuccgWt5q6sNwKPi3hEaUd_EkT7fSAIkE";
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://dados-supabase.rt19gx.easypanel.host";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "COLE_SEU_ANON_KEY_AQUI";
 const WARMER_CRON_URL = `${SUPABASE_URL}/functions/v1/warmer-cron`;
 
 // Intervalo de disparo (a edge function decide se executa ou aguarda)

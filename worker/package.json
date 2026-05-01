@@ -1,12 +1,13 @@
 {
   "name": "maturador-worker",
-  "version": "1.0.0",
-  "description": "Worker VPS — chama o warmer-cron do Supabase em loop",
+  "version": "2.0.0",
+  "description": "Worker VPS — roda a lógica do maturador direto no Node.js",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.90.1",
     "node-cron": "^3.0.3"
   }
 }
